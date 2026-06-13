@@ -1,4 +1,4 @@
-# GUP
+# JUP
 UDP-based protocol for online games designed for client-server communication
 
 ## Features
@@ -10,20 +10,19 @@ UDP-based protocol for online games designed for client-server communication
 - Retransmission
 
 ## Packet structure
-A packet has the following structure:
-+--------+---------+
-| Header | Payload |
-+--------+---------+
-
-## Header
+### Header
+```
 +---------------+-------------------+----------------------+------------------+---------------+---------------+
 | Type (1 byte) | User ID (2 bytes) | Channel ID (2 bytes) | Nonce (12 bytes) | Seq (4 bytes) | Ack (4 bytes) |
 +---------------+-------------------+----------------------+------------------+---------------+---------------+
+```
 
-## Payload
+### Payload
+```
 +------------------------------+-------------------------------+
 | User data (up to 1261 bytes) | Authentication tag (16 bytes) |
 +------------------------------+-------------------------------+
+```
 
 ## Security
 The protocol only supports a single cipher suite
@@ -34,7 +33,7 @@ The protocol only supports a single cipher suite
 The header is authenticated, but the payload is both authenticated and encrypted<br>
 The key exchange is authenticated one-way meaning that a client can verify it talks to a right server using digital signatures
 
-## "Connection" establishment
+## Connection establishment
 The first step is to do a handshake, the end goal of which is for both parties to exchange a symmetric key needed for encryption and authentication. The client also receives an arbitrary user ID that it sends along with each packet for identification. After that, both parties can start exchanging any data
 
 ## Channels
