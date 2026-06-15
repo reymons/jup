@@ -12,15 +12,17 @@ UDP-based protocol for online games designed for client-server communication
 ## Packet structure
 ### Header
 ```
-+---------------+-------------------+----------------------+------------------+---------------+---------------+
-| Type (1 byte) | User ID (2 bytes) | Channel ID (2 bytes) | Nonce (12 bytes) | Seq (4 bytes) | Ack (4 bytes) |
-+---------------+-------------------+----------------------+------------------+---------------+---------------+
++---------------+----------------+-------------------+----------------------+
+| Type (1 byte) | Flags (1 byte) | User ID (2 bytes) | Channel ID (2 bytes) |
++---------------+--+-------------+-+---------------+-+----------------------+
+| Nonce (12 bytes) | Seq (4 bytes) | Ack (4 bytes) |
+-------------------+---------------+---------------+
 ```
 
 ### Payload
 ```
 +------------------------------+-------------------------------+
-| User data (up to 1261 bytes) | Authentication tag (16 bytes) |
+| User data (up to 1230 bytes) | Authentication tag (16 bytes) |
 +------------------------------+-------------------------------+
 ```
 
