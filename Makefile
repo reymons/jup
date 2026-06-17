@@ -1,4 +1,4 @@
-.PHONY: example-client-server
+.PHONY: example-server example-client example-gen-sig
 
 example-server:
 	go run ./example/client-server/.

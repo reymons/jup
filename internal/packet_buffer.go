@@ -1,11 +1,18 @@
 package internal
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
+
+	"github.com/reymons/jup/internal/wire"
 )
 
 const bufferSize = 1300
+
+var (
+	ErrInvalidPacket = errors.New("invalid packet")
+)
 
 var pool = &sync.Pool{
 	New: func() any {
@@ -17,81 +24,52 @@ var pool = &sync.Pool{
 func GetPacketBuffer() *PacketBuffer {
 	buf := pool.Get().(*PacketBuffer)
 	buf.released.Store(false)
-	buf.left = 0
-	buf.UnrestrictRight()
 	return buf
 }
 
-//type PacketBuffer struct {
-//	buf, hdr, payload []byte
-//	released          atomic.Bool
-//}
-//
-//func NewPacketBuffer(buf []byte) *PacketBuffer {
-//	return &PacketBuffer{
-//		buf:     buf,
-//		hdr:     buf[:wire.HdrSize],
-//		payload: buf[wireHdrSize:],
-//	}
-//}
-//
-//func (b *PacketBuffer) WriteHeader(hdr *wire.Header) error {
-//	return hdr.Encode(b.hdr)
-//}
-//
-//func (b *PacketBuffer) Header() []byte {
-//	return b.hdr
-//}
-//
-//func (b *PacketBuffer) Payload() []byte {
-//	return b.payload
-//}
-//
-//func (b *PacketBuffer) Bytes() []byte {
-//	return b.buffer[:len(b.hdr)+len(b.payload)]
-//}
-//
-//func (b *PacketBuffer) Release() {
-//	if b.released.CompareAndSwap(false, true) {
-//		pool.Put(b)
-//	}
-//}
-
 type PacketBuffer struct {
-	data        []byte
-	left, right int
-	released    atomic.Bool
+	buf, hdr, payload []byte
+	released          atomic.Bool
 }
 
-func NewPacketBuffer(data []byte) *PacketBuffer {
+func NewPacketBuffer(buf []byte) *PacketBuffer {
 	return &PacketBuffer{
-		data:  data,
-		right: len(data),
+		buf:     buf,
+		hdr:     buf[:wire.HdrSize],
+		payload: buf[wire.HdrSize:],
 	}
 }
 
+func (b *PacketBuffer) WriteHeader(hdr *wire.Header) error {
+	return hdr.Encode(b.hdr)
+}
+
+func (b *PacketBuffer) ReadHeader(hdr *wire.Header) error {
+	return hdr.Decode(b.hdr)
+}
+
+func (b *PacketBuffer) Buffer() []byte {
+	return b.buf
+}
+
+func (b *PacketBuffer) PacketBytes() []byte {
+	return b.buf[:len(b.hdr)+len(b.payload)]
+}
+
 func (b *PacketBuffer) HeaderBytes() []byte {
-	return b.data[:b.left]
+	return b.hdr
 }
 
-func (b *PacketBuffer) Bytes() []byte {
-	return b.data[b.left:b.right]
+func (b *PacketBuffer) Payload() []byte {
+	return b.payload
 }
 
-func (b *PacketBuffer) BytesAll() []byte {
-	return b.data[:b.right]
+func (b *PacketBuffer) SetPacketSize(n int) {
+	b.payload = b.buf[wire.HdrSize:n]
 }
 
-func (b *PacketBuffer) RestrictLeft(n int) {
-	b.left = n
-}
-
-func (b *PacketBuffer) RestrictRight(n int) {
-	b.right = b.left + n
-}
-
-func (b *PacketBuffer) UnrestrictRight() {
-	b.right = len(b.data)
+func (b *PacketBuffer) SetPayloadSize(n int) {
+	b.payload = b.buf[wire.HdrSize : wire.HdrSize+n]
 }
 
 func (b *PacketBuffer) Release() {

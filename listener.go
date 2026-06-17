@@ -19,14 +19,6 @@ var (
 	errUnfinishedConn = errors.New("unfinished connection")
 )
 
-func readHeader(buf *internal.PacketBuffer, hdr *wire.Header) error {
-	if err := hdr.Decode(buf.BytesAll()); err != nil {
-		return err
-	}
-	buf.RestrictLeft(wire.HdrSize)
-	return nil
-}
-
 type Listener struct {
 	org        *net.UDPConn
 	connCh     chan *Conn
@@ -57,11 +49,11 @@ func (ln *Listener) Close() error {
 func (ln *Listener) onConnect(buf *internal.PacketBuffer, addr *net.UDPAddr) error {
 	defer buf.Release()
 	// extract peer's ECDH public key
-	data := buf.Bytes()
-	if len(data) != security.CurveSize {
+	payload := buf.Payload()
+	if len(payload) != security.CurveSize {
 		return io.ErrShortBuffer
 	}
-	peerPubKey, err := ln.curve.NewPublicKey(data)
+	peerPubKey, err := ln.curve.NewPublicKey(payload)
 	if err != nil {
 		return fmt.Errorf("curve.NewPublicKey: %w", err)
 	}
@@ -77,13 +69,13 @@ func (ln *Listener) onConnect(buf *internal.PacketBuffer, addr *net.UDPAddr) err
 		return fmt.Errorf("derive symmetric key: %w", err)
 	}
 	// copy public key and peer's public key to the buffer and sign them
-	buf.RestrictRight(security.CurveSize*2 + ed25519.SignatureSize)
-	data = buf.Bytes()
-	copy(data, pubKey.Bytes())
-	copy(data[security.CurveSize:], peerPubKey.Bytes())
+	buf.SetPayloadSize(security.CurveSize*2 + ed25519.SignatureSize)
+	payload = buf.Payload()
+	copy(payload, pubKey.Bytes())
+	copy(payload[security.CurveSize:], peerPubKey.Bytes())
 	sigPos := security.CurveSize * 2
-	sig := ed25519.Sign(ln.signingKey, data[:sigPos])
-	copy(data[sigPos:], sig)
+	sig := ed25519.Sign(ln.signingKey, payload[:sigPos])
+	copy(payload[sigPos:], sig)
 	// create a connection and send ConnectReply packet
 	listener := true
 	conn := newConn(ln.org, security.GenerateUID(), addr, listener)
@@ -130,13 +122,13 @@ func (ln *Listener) onUserData(hdr *wire.Header, buf *internal.PacketBuffer) err
 
 func (ln *Listener) acceptOnce() error {
 	buf := internal.GetPacketBuffer()
-	n, addr, err := ln.org.ReadFromUDP(buf.BytesAll())
+	n, addr, err := ln.org.ReadFromUDP(buf.Buffer())
 	if err != nil {
 		return err
 	}
-	buf.RestrictRight(n)
+	buf.SetPacketSize(n)
 	var hdr wire.Header
-	if err := readHeader(buf, &hdr); err != nil {
+	if err := buf.ReadHeader(&hdr); err != nil {
 		return fmt.Errorf("read header: %w", err)
 	}
 	switch hdr.Type {

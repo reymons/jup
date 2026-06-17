@@ -74,11 +74,10 @@ func (conn *Conn) sendBytes(data []byte) error {
 
 func (conn *Conn) sendPacket(hdr *wire.Header, buf *internal.PacketBuffer) error {
 	hdr.User = conn.uid
-	data := buf.BytesAll()
-	if err := hdr.Encode(data); err != nil {
+	if err := buf.WriteHeader(hdr); err != nil {
 		return fmt.Errorf("encode header: %w", err)
 	}
-	return conn.sendBytes(data)
+	return conn.sendBytes(buf.PacketBytes())
 }
 
 func (conn *Conn) sendAck(seq uint32) error {
@@ -91,20 +90,20 @@ func (conn *Conn) Addr() string {
 
 func (conn *Conn) decrypt(nonce [security.NonceSize]byte, buf *internal.PacketBuffer) error {
 	aad := buf.HeaderBytes()
-	ciphertext := buf.Bytes()
+	ciphertext := buf.Payload()
 	plaintext, err := conn.cipher.Open(ciphertext[:0], nonce[:], ciphertext, aad)
 	if err == nil {
-		buf.RestrictRight(len(plaintext))
+		buf.SetPayloadSize(len(plaintext))
 	}
 	return err
 }
 
 func (conn *Conn) encrypt(nonce [security.NonceSize]byte, buf *internal.PacketBuffer) error {
 	aad := buf.HeaderBytes()
-	plaintext := buf.Bytes()
-	buf.UnrestrictRight()
-	ciphertext := conn.cipher.Seal(buf.Bytes()[:0], nonce[:], plaintext, aad)
-	buf.RestrictRight(len(ciphertext))
+	plaintext := buf.Payload()
+	buf.SetPacketSize(len(buf.Buffer()))
+	ciphertext := conn.cipher.Seal(buf.Payload()[:0], nonce[:], plaintext, aad)
+	buf.SetPayloadSize(len(ciphertext))
 	return nil
 }
 
@@ -126,9 +125,7 @@ func (conn *Conn) ReadBuffer() (*internal.PacketBuffer, wire.CID, error) {
 }
 
 func (conn *Conn) AcquireBuffer() *internal.PacketBuffer {
-	buf := internal.GetPacketBuffer()
-	buf.RestrictLeft(wire.HdrSize)
-	return buf
+	return internal.GetPacketBuffer()
 }
 
 func (conn *Conn) WriteBuffer(buf *internal.PacketBuffer, channel wire.CID) error {
@@ -140,11 +137,11 @@ func (conn *Conn) WriteBuffer(buf *internal.PacketBuffer, channel wire.CID) erro
 	if _, err := rand.Read(hdr.Nonce[:]); err != nil {
 		return fmt.Errorf("read nonce: %w", err)
 	}
-	if err := hdr.Encode(buf.BytesAll()); err != nil {
+	if err := buf.WriteHeader(&hdr); err != nil {
 		return fmt.Errorf("encode header: %w", err)
 	}
 	if err := conn.encrypt(hdr.Nonce, buf); err != nil {
 		return fmt.Errorf("encrypt: %w", err)
 	}
-	return conn.sendBytes(buf.BytesAll())
+	return conn.sendBytes(buf.PacketBytes())
 }

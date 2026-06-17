@@ -48,12 +48,12 @@ func newDialer(org *net.UDPConn, addr *net.UDPAddr, verifKey []byte) *dialer {
 }
 
 func (d *dialer) readOnce(hdr *wire.Header, buf *internal.PacketBuffer) error {
-	n, err := d.conn.org.Read(buf.BytesAll())
+	n, err := d.conn.org.Read(buf.Buffer())
 	if err != nil {
 		return fmt.Errorf("read from conn: %w", err)
 	}
-	buf.RestrictRight(n)
-	if err := readHeader(buf, hdr); err != nil {
+	buf.SetPacketSize(n)
+	if err := buf.ReadHeader(hdr); err != nil {
 		return fmt.Errorf("read header: %w", err)
 	}
 	return nil
@@ -62,14 +62,13 @@ func (d *dialer) readOnce(hdr *wire.Header, buf *internal.PacketBuffer) error {
 func (d *dialer) sendConnect() error {
 	buf := internal.GetPacketBuffer()
 	defer buf.Release()
-	buf.RestrictLeft(wire.HdrSize)
 	privKey, err := d.curve.GenerateKey(rand.Reader)
 	if err != nil {
 		return fmt.Errorf("generate private key: %w", err)
 	}
 	pubKey := privKey.PublicKey()
-	buf.RestrictRight(security.CurveSize)
-	copy(buf.Bytes(), pubKey.Bytes())
+	copy(buf.Payload(), pubKey.Bytes())
+	buf.SetPayloadSize(security.CurveSize)
 	hdr := wire.Header{Type: wire.HdrConnect}
 	if err := d.conn.sendPacket(&hdr, buf); err != nil {
 		return fmt.Errorf("send packet: %w", err)
@@ -89,16 +88,16 @@ func (d *dialer) readConnectReply() error {
 	if hdr.Type != wire.HdrConnectReply {
 		return errHandshakeFailed
 	}
-	data := buf.Bytes()
-	if len(data) != 2*security.CurveSize+ed25519.SignatureSize {
+	payload := buf.Payload()
+	if len(payload) != 2*security.CurveSize+ed25519.SignatureSize {
 		return io.ErrShortBuffer
 	}
 	size := security.CurveSize
 	sigPos := 2 * size
-	pubKey := data[:size]
-	myPubKey := data[size:sigPos]
-	sig := data[sigPos:]
-	mesg := data[:sigPos]
+	pubKey := payload[:size]
+	myPubKey := payload[size:sigPos]
+	sig := payload[sigPos:]
+	mesg := payload[:sigPos]
 	// verify the signature and compare public keys
 	if !ed25519.Verify(d.verifyingKey, mesg, sig) {
 		return errInvalidSignature
@@ -135,15 +134,14 @@ func (d *dialer) sendConnectFinished() error {
 	if _, err := rand.Read(hdr.Nonce[:]); err != nil {
 		return fmt.Errorf("read nonce: %w", err)
 	}
-	if err := hdr.Encode(buf.BytesAll()); err != nil {
+	if err := buf.WriteHeader(&hdr); err != nil {
 		return fmt.Errorf("encode header: %w", err)
 	}
-	buf.RestrictLeft(wire.HdrSize)
-	buf.RestrictRight(0)
+	buf.SetPayloadSize(0)
 	if err := d.conn.encrypt(hdr.Nonce, buf); err != nil {
 		return fmt.Errorf("encrypt packet: %w", err)
 	}
-	if err := d.conn.sendBytes(buf.BytesAll()); err != nil {
+	if err := d.conn.sendBytes(buf.PacketBytes()); err != nil {
 		return fmt.Errorf("send packet: %w", err)
 	}
 	return nil
